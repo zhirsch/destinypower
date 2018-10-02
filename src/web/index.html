@@ -1,0 +1,491 @@
+<html>
+
+<head>
+    <title>Destiny Power</title>
+    <script src="//ajax.googleapis.com/ajax/libs/jquery/3.3.1/jquery.min.js"></script>
+    <script src="//cdn.jsdelivr.net/npm/js-cookie@2/src/js.cookie.min.js"></script>
+    <script src="api.js"></script>
+    <script>
+        API.SetApiKey("386fd9ec439348baaafcb18521e566f4");
+        const CLIENT_ID = "24719";
+
+        const Hash = {
+            KINETIC_WEAPON: 1498876634,
+            ENERGY_WEAPON: 2465295065,
+            POWER_WEAPON: 953998645,
+
+            HELMET: 3448274439,
+            GAUNTLETS: 3551918588,
+            CHEST: 14239492,
+            LEG: 20886954,
+            CLASS_ITEM: 1585787867,
+
+            AWOKEN: 2803282938,
+            EXO: 898834093,
+            HUMAN: 3887404748,
+
+            FEMALE: 2204441813,
+            MALE: 3111576190,
+
+            HUNTER: 671679327,
+            TITAN: 3655393761,
+            WARLOCK: 2271682572,
+        };
+
+        const HASH_TO_NAME = {
+            [Hash.KINETIC_WEAPON]: "Kinetic weapon",
+            [Hash.ENERGY_WEAPON]: "Energy weapon",
+            [Hash.POWER_WEAPON]: "Power weapon",
+
+            [Hash.HELMET]: "Helmet",
+            [Hash.GAUNTLETS]: "Gauntlets",
+            [Hash.CHEST]: "Chest",
+            [Hash.LEG]: "Leg",
+            [Hash.CLASS_ITEM]: "Class item",
+
+            [Hash.AWOKEN]: "Awoken",
+            [Hash.EXO]: "Exo",
+            [Hash.HUMAN]: "Human",
+
+            [Hash.FEMALE]: "Female",
+            [Hash.MALE]: "Male",
+
+            [Hash.HUNTER]: "Hunter",
+            [Hash.TITAN]: "Titan",
+            [Hash.WARLOCK]: "Warlock",
+        };
+
+        const WEAPONS_ORDER = [
+            Hash.KINETIC_WEAPON,
+            Hash.ENERGY_WEAPON,
+            Hash.POWER_WEAPON,
+        ];
+        const ARMOR_ORDER = [
+            Hash.HELMET,
+            Hash.GAUNTLETS,
+            Hash.CHEST,
+            Hash.LEG,
+            Hash.CLASS_ITEM,
+        ];
+
+        $(document).ready(function () {
+            // Check if the client is already logged in.
+            let access_token = Cookies.get("access_token");
+            if (access_token !== undefined) {
+                API.SetAccessToken(access_token);
+                fetchContent();
+                return;
+            }
+
+            // Check if the client is being logged in.
+            let searchParams = new URLSearchParams(window.location.search);
+            let code = searchParams.get("code");
+            let state = searchParams.get("state");
+            if (code != null && state != null) {
+                login(code, state).then(fetchContent).catch(showError);
+                return;
+            }
+
+            // Prompt the client to log in.
+            $("#login").show();
+        });
+
+        function login(code, state) {
+            if (state != "X") {
+                throw new Error("Invalid State");
+            }
+            return API.Login(CLIENT_ID, code)
+                .then(response => {
+                    showRaw(response);
+                    Cookies.set("access_token", response.access_token, {
+                        expires: new Date(new Date().getTime() + response.expires_in * 1000),
+                    });
+                    API.SetAccessToken(response.access_token);
+                });
+        }
+
+        function fetchContent() {
+            $("#content").show();
+            fetchPlatforms()
+                .then(showPlatforms)
+                .then(fetchProfile)
+                .then(showProfile)
+                .catch(showError);
+        }
+
+        function fetchPlatforms() {
+            return API.UserGetMembershipDataForCurrentUser();
+        }
+
+        function showPlatforms(response) {
+            showRaw(response);
+            $.each(response.Response.destinyMemberships, function (i, platform) {
+                $("#platforms").append($("<option />").text(platform.displayName).data("platform", platform));
+            });
+            $("#platforms").change(function () {
+                fetchProfile($(this).find(":selected").data("platform"))
+                    .then(showProfile)
+                    .catch(showError);
+            });
+            return response.Response.destinyMemberships[0];
+        }
+
+        function fetchProfile(platform) {
+            return API.Destiny2GetProfile(platform.membershipType, platform.membershipId);
+        }
+
+        function showProfile(response) {
+            showRaw(response);
+            let weaponsByBucket = {
+                [Hash.KINETIC_WEAPON]: null,
+                [Hash.ENERGY_WEAPON]: null,
+                [Hash.POWER_WEAPON]: null,
+            };
+            let characters = {};
+
+            // Find the highest power level items for each character.  Weapons are shared across characters, but armor is unique per character.
+            $.each(response.Response.characters.data, function (characterId, character) {
+                characters[characterId] = {
+                    characterId: characterId,
+                    items: {
+                        [Hash.HELMET]: null,
+                        [Hash.GAUNTLETS]: null,
+                        [Hash.CHEST]: null,
+                        [Hash.LEG]: null,
+                        [Hash.CLASS_ITEM]: null,
+                    },
+                };
+                $.each(WEAPONS_ORDER, function (i, hash) {
+                    fillHighestPowerItem(weaponsByBucket, hash, response.Response, characterId);
+                });
+                $.each(ARMOR_ORDER, function (i, hash) {
+                    fillHighestPowerItem(characters[characterId].items, hash, response.Response, characterId);
+                })
+            });
+            $.each(response.Response.characters.data, function (characterId, character) {
+                characters[characterId].items[Hash.KINETIC_WEAPON] = deepCopy(weaponsByBucket[Hash.KINETIC_WEAPON]);
+                characters[characterId].items[Hash.ENERGY_WEAPON] = deepCopy(weaponsByBucket[Hash.ENERGY_WEAPON]);
+                characters[characterId].items[Hash.POWER_WEAPON] = deepCopy(weaponsByBucket[Hash.POWER_WEAPON]);
+            })
+
+            // Compute stats for each character.
+            $.each(characters, function (characterId, character) {
+                character.power = Object.values(character.items)
+                    .map(x => x.itemInstance.primaryStat.value)
+                    .reduce((a, b) => a + b) / 8;
+                character.powerForNextLevel = 8 * (Math.trunc(character.power) + 1 - character.power);
+                $.each(character.items, function (bucketHash, item) {
+                    let power = Math.trunc(character.power);
+                    item.smallDropIncreasesBucket = clamp(power + 1 - item.itemInstance.primaryStat.value, 0, power + 1);
+                    item.largeDropIncreasesBucket = clamp(power + 5 - item.itemInstance.primaryStat.value, 0, power + 5);
+                    item.smallDropIncreasesTotal = computeTotalIncrease(item.smallDropIncreasesBucket, character.powerForNextLevel);
+                    item.largeDropIncreasesTotal = computeTotalIncrease(item.largeDropIncreasesBucket, character.powerForNextLevel);
+                });
+                character.countSmallDropIncreasesBucket = $.map(character.items, (item) => item.smallDropIncreasesBucket == 0 ? 0 : 1).reduce((a, b) => a + b);
+                character.countLargeDropIncreasesBucket = $.map(character.items, (item) => item.largeDropIncreasesBucket == 0 ? 0 : 1).reduce((a, b) => a + b);
+
+                character.countSmallDropIncreasesTotalBy0 = $.map(character.items, (item) => item.smallDropIncreasesTotal == 0 ? 1 : 0).reduce((a, b) => a + b);
+                character.countLargeDropIncreasesTotalBy0 = $.map(character.items, (item) => item.largeDropIncreasesTotal == 0 ? 1 : 0).reduce((a, b) => a + b);
+                character.countSmallDropIncreasesTotalBy1 = $.map(character.items, (item) => item.smallDropIncreasesTotal == 1 ? 1 : 0).reduce((a, b) => a + b);
+                character.countLargeDropIncreasesTotalBy1 = $.map(character.items, (item) => item.largeDropIncreasesTotal == 1 ? 1 : 0).reduce((a, b) => a + b);
+                character.countSmallDropIncreasesTotalBy2 = $.map(character.items, (item) => item.smallDropIncreasesTotal == 2 ? 1 : 0).reduce((a, b) => a + b);
+                character.countLargeDropIncreasesTotalBy2 = $.map(character.items, (item) => item.largeDropIncreasesTotal == 2 ? 1 : 0).reduce((a, b) => a + b);
+                character.countSmallDropIncreasesTotalBy3 = $.map(character.items, (item) => item.smallDropIncreasesTotal == 3 ? 1 : 0).reduce((a, b) => a + b);
+                character.countLargeDropIncreasesTotalBy3 = $.map(character.items, (item) => item.largeDropIncreasesTotal == 3 ? 1 : 0).reduce((a, b) => a + b);
+            });
+
+            $("#characters").empty();
+            $.each(characters, function (characterId, character) {
+                $("#characters").append(buildCharacterTable(response, character));
+            });
+        }
+
+        function buildCharacterTable(response, character) {
+            console.log(character);
+            let table = $("<table>", { class: "character" });
+
+            let caption = $("<caption>");
+            caption.text(getCharacterDescription(response.Response.characters.data[character.characterId]));
+            table.append(caption);
+
+            let header = $("<thead>");
+            header.append(buildTableRow([
+                $("<th>").text(""),
+                $("<th>").text("Power"),
+                $("<th>", { class: "spacer" }),
+                $("<th>").text("+1 INCREASES BUCKET"),
+                $("<th>").text("+5 INCREASES BUCKET"),
+                $("<th>", { class: "spacer" }),
+                $("<th>").text("+1 INCREASES TOTAL"),
+                $("<th>").text("+5 INCREASES TOTAL"),
+            ]));
+            table.append(header);
+
+            let body = $("<tbody>");
+            $.each(WEAPONS_ORDER.concat(ARMOR_ORDER), function (i, bucket) {
+                let item = character.items[bucket];
+                let cell = $("<td>", { class: "value" }).text(item.itemInstance.primaryStat.value);
+                API.Destiny2GetDestinyEntityDefinition("DestinyInventoryItemDefinition", item.item.itemHash)
+                    .then(response => {
+                        let img = $("<img>").attr("src", "//www.bungie.net" + response.Response.displayProperties.icon);
+                        img.attr("title", response.Response.displayProperties.name);
+                        cell.append(img);
+                    })                        
+                    .catch(showError);
+                body.append(buildTableRow([
+                    $("<td>").text(HASH_TO_NAME[bucket]),
+                    cell,
+                    $("<td>", { class: "spacer" }),
+                    item.smallDropIncreasesBucket == 0
+                        ? $("<td>", { class: "zero" })
+                        : $("<td>", { class: "value" }).text(item.smallDropIncreasesBucket),
+                    item.largeDropIncreasesBucket == 0
+                        ? $("<td>", { class: "zero" })
+                        : $("<td>", { class: "value" }).text(item.largeDropIncreasesBucket),
+                    $("<td>", { class: "spacer" }),
+                    $("<td>", { class: "value-" + clamp(item.smallDropIncreasesTotal, 0, 2) }).text(showCheckmarks(item.smallDropIncreasesTotal)),
+                    $("<td>", { class: "value-" + clamp(item.largeDropIncreasesTotal, 0, 2) }).text(showCheckmarks(item.largeDropIncreasesTotal)),
+                ]));
+            });
+            table.append(body);
+
+            let footer = $("<tfoot>");
+            footer.append(buildTableRow([
+                $("<td>").text("AVERAGE"),
+                $("<td>", { class: "value" }).text(character.power),
+                $("<td>", { class: "spacer" }),
+                $("<td>", { rowspan: 2, class: "value" }).text(100 * character.countSmallDropIncreasesBucket / 8 + "%"),
+                $("<td>", { rowspan: 2, class: "value" }).text(100 * character.countLargeDropIncreasesBucket / 8 + "%"),
+                $("<td>", { class: "spacer" }),
+                $("<td>", { class: "value" }).text("∅ = " + 100 * character.countSmallDropIncreasesTotalBy0 / 8 + "%"),
+                $("<td>", { class: "value" }).text("∅ = " + 100 * character.countLargeDropIncreasesTotalBy0 / 8 + "%"),
+            ]));
+            footer.append(buildTableRow([
+                $("<td>").text("FOR NEXT LEVEL"),
+                $("<td>", { class: "value" }).text(character.powerForNextLevel),
+                $("<td>", { class: "spacer" }),
+                $("<td>", { class: "spacer" }),
+                $("<td>", { class: "value" }).text("✔ = " + 100 * character.countSmallDropIncreasesTotalBy1 / 8 + "%"),
+                $("<td>", { class: "value" }).text("✔ = " + 100 * character.countLargeDropIncreasesTotalBy1 / 8 + "%"),
+            ]));
+            footer.append(buildTableRow([
+                $("<td>", { class: "spacer" }),
+                $("<td>", { class: "spacer" }),
+                $("<td>", { class: "spacer" }),
+                $("<td>", { class: "spacer" }),
+                $("<td>", { class: "spacer" }),
+                $("<td>", { class: "spacer" }),
+                $("<td>", { class: "value" }).text("✔✔ = " + 100 * character.countSmallDropIncreasesTotalBy2 / 8 + "%"),
+                $("<td>", { class: "value" }).text("✔✔ = " + 100 * character.countLargeDropIncreasesTotalBy2 / 8 + "%"),
+            ]));
+            footer.append(buildTableRow([
+                $("<td>", { class: "spacer" }),
+                $("<td>", { class: "spacer" }),
+                $("<td>", { class: "spacer" }),
+                $("<td>", { class: "spacer" }),
+                $("<td>", { class: "spacer" }),
+                $("<td>", { class: "spacer" }),
+                $("<td>", { class: "value" }).text("✔✔✔ = " + 100 * character.countSmallDropIncreasesTotalBy3 / 8 + "%"),
+                $("<td>", { class: "value" }).text("✔✔✔ = " + 100 * character.countLargeDropIncreasesTotalBy3 / 8 + "%"),
+            ]));
+            table.append(footer);
+
+            return table;
+        }
+
+        function buildTableRow(cells) {
+            let row = $("<tr>");
+            $.each(cells, function (i, cell) {
+                row.append(cell);
+            });
+            return row;
+        }
+
+        function fillHighestPowerItem(itemsByBucket, bucketHash, profile, characterId) {
+            let fn = function (i, item) {
+                if (item.bucketHash != bucketHash) {
+                    return;
+                }
+                let itemInstance = profile.itemComponents.instances.data[item.itemInstanceId];
+                if (itemsByBucket[bucketHash] == null || itemsByBucket[bucketHash].itemInstance.primaryStat.value < itemInstance.primaryStat.value) {
+                    itemsByBucket[bucketHash] = {
+                        item: item,
+                        itemInstance: itemInstance,
+                    };
+                }
+            };
+            $.each(profile.characterInventories.data[characterId].items, fn);
+            $.each(profile.characterEquipment.data[characterId].items, fn);
+        }
+
+        function getCharacterDescription(character) {
+            return HASH_TO_NAME[character.classHash] + " (" + HASH_TO_NAME[character.raceHash] + " " + HASH_TO_NAME[character.genderHash] + ")";
+        }
+
+        function clamp(value, min, max) {
+            if (value < min) {
+                return min;
+            }
+            if (value > max) {
+                return max;
+            }
+            return value;
+        }
+
+        function computeTotalIncrease(bucketIncreases, totalNeeded) {
+            if (bucketIncreases < totalNeeded) {
+                return 0;
+            }
+            return 1 + Math.trunc((bucketIncreases - totalNeeded) / 8);
+        }
+
+        function deepCopy(obj) {
+            return $.extend(true, {}, obj);
+        }
+
+        function showCheckmarks(count) {
+            let str = "";
+            for (let i = 0; i < count; i++) {
+                str += "✔"
+            }
+            return str;
+        }
+
+        function showRaw(raw) {
+            $("#raw").text(JSON.stringify(raw, null, 2));
+            $("#raw").show();
+        }
+
+        function showError(error) {
+            $("#error #message").text("ERROR: " + error.message);
+            $("#error").show();
+            throw error;
+        }
+    </script>
+
+    <style>
+        body {
+            font-family: sans-serif;
+        }
+
+        #error {
+            display: none;
+        }
+
+        #error #message {
+            padding: 1em;
+            background-color: darkred;
+            color: white;
+            font-weight: bold;
+        }
+
+        #login {
+            display: none;
+        }
+
+        #content {
+            display: none;
+        }
+
+        .character {
+            border-collapse: collapse;
+            margin: 1em;
+        }
+
+        .character caption {
+            padding: 0.2em 0.8em;
+            border: 1px solid grey;
+        }
+
+        th,
+        td {
+            padding: 0.2em 0.8em;
+            border: 1px solid grey;
+        }
+
+        td.value {
+            text-align: center;
+        }
+
+        td.value-0 {
+            text-align: center;
+            background-color: grey;
+        }
+
+        td.value-1 {
+            text-align: center;
+            background-color: lightsalmon;
+            border-color: lightsalmon;
+        }
+
+        td.value-2 {
+            text-align: center;
+            background-color: gold;
+            border-color: gold;
+        }
+
+        td.value-3 {
+            text-align: center;
+            background-color: lightgreen;
+            border-color: lightgreen;
+        }
+
+        th {
+            border-top: none;
+        }
+
+        .character caption {
+            background-color: black;
+            color: white;
+            font-weight: bold;
+        }
+
+        .character tbody tr td:first-child {
+            background-color: lightblue;
+        }
+
+        .character tr .spacer {
+            border: none;
+            min-width: 0;
+        }
+
+        .character tr .zero {
+            background-color: darkred;
+            border-color: darkred;
+        }
+
+        .character tfoot {
+            border-top: 5px solid grey;
+        }
+
+        .character td {
+            min-width: 5em;
+            vertical-align: middle;
+        }
+
+        .character td img {
+            width: 30px;
+            height: 30px;
+            padding-left: 0.3em;
+        }
+    </style>
+</head>
+
+<body>
+    <h1>Destiny Power</h1>
+    <div id="error">
+        <div id="message"></div>
+        <hr />
+    </div>
+    <div id="login">
+        <a href="https://www.bungie.net/en/oauth/authorize?response_type=code&client_id=24719&state=X">Login</a>
+    </div>
+    <div id="content">
+        <select id="platforms"></select>
+        <div id="characters"></div>
+        <hr />
+    </div>
+    <pre id="raw"></pre>
+</body>
+
+</html>
