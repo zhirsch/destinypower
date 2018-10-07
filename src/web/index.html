@@ -5,9 +5,9 @@
     <script src="//ajax.googleapis.com/ajax/libs/jquery/3.3.1/jquery.min.js"></script>
     <script src="//cdn.jsdelivr.net/npm/js-cookie@2/src/js.cookie.min.js"></script>
     <script src="api.js"></script>
+    <script src="config.js"></script>
     <script>
-        API.SetApiKey("386fd9ec439348baaafcb18521e566f4");
-        const CLIENT_ID = "24719";
+        API.SetApiKey(API_KEY);
 
         const Hash = {
             KINETIC_WEAPON: 1498876634,
@@ -243,8 +243,8 @@
                         ? $("<td>", { class: "zero" })
                         : $("<td>", { class: "value" }).text(item.largeDropIncreasesBucket),
                     $("<td>", { class: "spacer" }),
-                    $("<td>", { class: "value-" + clamp(item.smallDropIncreasesTotal, 0, 2) }).text(showCheckmarks(item.smallDropIncreasesTotal)),
-                    $("<td>", { class: "value-" + clamp(item.largeDropIncreasesTotal, 0, 2) }).text(showCheckmarks(item.largeDropIncreasesTotal)),
+                    $("<td>", { class: "value-" + clamp(item.smallDropIncreasesTotal, 0, 3) }).text(showCheckmarks(item.smallDropIncreasesTotal)),
+                    $("<td>", { class: "value-" + clamp(item.largeDropIncreasesTotal, 0, 3) }).text(showCheckmarks(item.largeDropIncreasesTotal)),
                 ]));
             });
             table.append(body);
