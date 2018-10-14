@@ -3,7 +3,6 @@
 <head>
     <title>Destiny Power</title>
     <script src="//ajax.googleapis.com/ajax/libs/jquery/3.3.1/jquery.min.js"></script>
-    <script src="//cdn.jsdelivr.net/npm/js-cookie@2/src/js.cookie.min.js"></script>
     <script src="api.js"></script>
     <script src="config.js"></script>
     <script>
@@ -68,14 +67,26 @@
             Hash.CLASS_ITEM,
         ];
 
-        $(document).ready(function () {
-            $("#login_url").attr("href", API.GetLoginUrl(CLIENT_ID, "X"));
+        function showLoginLink() {
+            let csrf = Math.random().toString(36).substring(2);
+            window.sessionStorage.setItem("csrf", csrf);
+            $("#login a").attr("href", API.GetLoginUrl(CLIENT_ID, csrf));
+            $("#login").show();
+        }
 
+        $(document).ready(function () {
             // Check if the client is already logged in.
-            let access_token = Cookies.get("access_token");
-            if (access_token !== undefined) {
-                API.SetAccessToken(access_token);
-                fetchContent();
+            if (window.localStorage.getItem("bungieAuth")) {
+                let bungieAuth = JSON.parse(window.localStorage.getItem("bungieAuth"));
+                if (new Date(new Date().getTime() + bungieAuth.expires_in * 1000) > new Date()) {
+                    API.SetAccessToken(bungieAuth.access_token);
+                    fetchContent();
+                    return;
+                }
+
+                // Auth has expired, remove it and prompt the user to log in again.
+                window.localStorage.removeItem("bungieAuth");
+                showLoginLink();
                 return;
             }
 
@@ -84,24 +95,25 @@
             let code = searchParams.get("code");
             let state = searchParams.get("state");
             if (code != null && state != null) {
+                window.history.replaceState({}, document.title, window.location.href.split('?')[0]);
                 login(code, state).then(fetchContent).catch(showError);
                 return;
             }
 
             // Prompt the client to log in.
-            $("#login").show();
+            showLoginLink();
         });
 
         function login(code, state) {
-            if (state != "X") {
+            let csrf = window.sessionStorage.getItem("csrf");
+            if (state != csrf) {
                 throw new Error("Invalid State");
             }
+            window.sessionStorage.removeItem("csrf");
             return API.Login(CLIENT_ID, code)
                 .then(response => {
                     showRaw(response);
-                    Cookies.set("access_token", response.access_token, {
-                        expires: new Date(new Date().getTime() + response.expires_in * 1000),
-                    });
+                    window.localStorage.setItem("bungieAuth", JSON.stringify(response));
                     API.SetAccessToken(response.access_token);
                 });
         }
@@ -445,7 +457,7 @@
         <hr />
     </div>
     <div id="login">
-        <a id="login_url">Login</a>
+        <a>Login</a>
     </div>
     <div id="content">
         <select id="platforms"></select>
