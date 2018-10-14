@@ -54,6 +54,10 @@ var API = function () {
             ApiKey = api_key;
         },
 
+        GetLoginUrl: function (client_id, state) {
+            return `https://www.bungie.net/en/oauth/authorize?response_type=code&client_id=${client_id}&state=${state}`;
+        },
+
         Login: function (client_id, code) {
             var args = {
                 "grant_type": "authorization_code",
