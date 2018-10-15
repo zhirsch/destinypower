@@ -78,7 +78,7 @@
             // Check if the client is already logged in.
             if (window.localStorage.getItem("bungieAuth")) {
                 let bungieAuth = JSON.parse(window.localStorage.getItem("bungieAuth"));
-                if (new Date(new Date().getTime() + bungieAuth.expires_in * 1000) > new Date()) {
+                if (new Date(bungieAuth.expiry) > new Date()) {
                     API.SetAccessToken(bungieAuth.access_token);
                     fetchContent();
                     return;
@@ -113,6 +113,7 @@
             return API.Login(CLIENT_ID, code)
                 .then(response => {
                     showRaw(response);
+                    response.expiry = new Date(new Date().getTime() + response.expires_in * 1000);
                     window.localStorage.setItem("bungieAuth", JSON.stringify(response));
                     API.SetAccessToken(response.access_token);
                 });
