@@ -295,7 +295,11 @@
                     return;
                 }
                 let itemInstance = profile.itemComponents.instances.data[item.itemInstanceId];
-                if (itemsByBucket[bucketHash] == null || itemsByBucket[bucketHash].itemInstance.primaryStat.value < itemInstance.primaryStat.value) {
+                if (itemInstance.primaryStat === undefined) {
+                    return;
+                }
+                if (itemsByBucket[bucketHash] == null || 
+                   itemsByBucket[bucketHash].itemInstance.primaryStat.value < itemInstance.primaryStat.value) {
                     itemsByBucket[bucketHash] = {
                         item: item,
                         itemInstance: itemInstance,
