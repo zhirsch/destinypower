@@ -217,76 +217,52 @@
 
         function buildCharacterTable(response, character) {
             console.log(character);
-            let table = $("<table>", { class: "character" });
 
-            let caption = $("<caption>");
-            caption.text(getCharacterDescription(response.Response.characters.data[character.characterId]));
-            table.append(caption);
+            let caption = HASH_TO_NAME[character.classHash] + " (" + HASH_TO_NAME[character.raceHash] + " " + HASH_TO_NAME[character.genderHash] + ")";
 
-            let header = $("<thead>");
-            header.append(buildTableRow([
-                $("<th>").text(""),
-                $("<th>").text("Power"),
-                $("<th>", { class: "spacer" }),
-                $("<th>").text("+1 INCREASES BUCKET BY"),
-                $("<th>").text("+5 INCREASES BUCKET BY"),
-                $("<th>", { class: "spacer" }),
-                $("<th>").text("+1 INCREASES TOTAL BY"),
-                $("<th>").text("+5 INCREASES TOTAL BY"),
-            ]));
-            table.append(header);
+            let header = [
+                {},
+                { text: "Power" },
+                { class: "spacer" },
+                { text: "+1 Increases Bucket By" },
+                { text: "+5 Increases Bucket By" },
+                { class: "spacer" },
+                { text: "+1 Increases Total By" },
+                { text: "+5 Increases Total By" },
+            ];
 
-            let body = $("<tbody>");
-            $.each(WEAPONS_ORDER.concat(ARMOR_ORDER), function (i, bucket) {
-                let item = character.items[bucket];
-                let cell = $("<td>", { class: "value" }).text(item.itemInstance.primaryStat.value);
-                API.Destiny2GetDestinyEntityDefinition("DestinyInventoryItemDefinition", item.item.itemHash)
-                    .then(response => {
-                        let img = $("<img>").attr("src", "//www.bungie.net" + response.Response.displayProperties.icon);
-                        img.attr("title", response.Response.displayProperties.name);
-                        cell.append(img);
-                    })
-                    .catch(showError);
-                body.append(buildTableRow([
-                    $("<td>").text(HASH_TO_NAME[bucket]),
-                    cell,
-                    $("<td>", { class: "spacer" }),
-                    item.smallDropIncreasesBucket == 0
-                        ? $("<td>", { class: "zero" })
-                        : $("<td>", { class: "value" }).text(item.smallDropIncreasesBucket),
-                    item.largeDropIncreasesBucket == 0
-                        ? $("<td>", { class: "zero" })
-                        : $("<td>", { class: "value" }).text(item.largeDropIncreasesBucket),
-                    $("<td>", { class: "spacer" }),
-                    $("<td>", { class: "value-" + clamp(item.smallDropIncreasesTotal, 0, 3) }).text(item.smallDropIncreasesTotal),
-                    $("<td>", { class: "value-" + clamp(item.largeDropIncreasesTotal, 0, 3) }).text(item.largeDropIncreasesTotal),
-                ]));
+            let rows = (WEAPONS_ORDER + ARMOR_ORDER).map(bucketHash => {
+                let item = character.items[bucketHash];
+                return [
+                    { text: HASH_TO_NAME[bucketHash] },
+                    { text: item.itemInstance.primaryStat.value, class: "value" },
+                    { class: "spacer" },
+                    item.smallDropIncreasesBucket == 0 ? { class: "zero" } : { text: item.smallDropIncreasesBucket, class: "value" },
+                    item.largeDropIncreasesBucket == 0 ? { class: "zero" } : { text: item.largeDropIncreasesBucket, class: "value" },
+                    { class: "spacer" },
+                    { text: item.smallDropIncreasesTotal, class: "value-" + clamp(item.smalLDropIncreasesTotal, 0, 3) },
+                    { text: item.largeDropIncreasesTotal, class: "value-" + clamp(item.largeDropIncreasesTotal, 0, 3) },
+                ]
             });
-            table.append(body);
 
-            let footer = $("<tfoot>");
-            footer.append(buildTableRow([
-                $("<td>").text("AVERAGE"),
-                $("<td>", { class: "value" }).text(character.power),
-                $("<td>", { class: "spacer" }),
-                $("<td>", { rowspan: 2, class: "value" }).text(100 * character.countSmallDropIncreasesBucket / 8 + "%"),
-                $("<td>", { rowspan: 2, class: "value" }).text(100 * character.countLargeDropIncreasesBucket / 8 + "%"),
-            ]));
-            footer.append(buildTableRow([
-                $("<td>").text("FOR NEXT LEVEL"),
-                $("<td>", { class: "value" }).text(character.powerForNextLevel),
-            ]));
-            table.append(footer);
+            let footer1 = [
+                { text: "AVERAGE" },
+                { text: character.power, class: "value" },
+                { class: "spacer" },
+                { text: 100 * character.countSmallDropIncreasesBucket / 8 + "%", class: "value", rowspan: 2 },
+                { text: 100 * character.countLargeDropIncreasesBucket / 8 + "%", class: "value", rowspan: 2 },
+            ];
+            let footer2 = [
+                { text: "FOR NEXT LEVEL" },
+                { text: character.powerForNextLevel, class: "value" },
+            ];
 
-            return table;
-        }
-
-        function buildTableRow(cells) {
-            let row = $("<tr>");
-            $.each(cells, function (i, cell) {
-                row.append(cell);
-            });
-            return row;
+            return new Table({ class: "character" })
+                .setCaption(getCharacterDescription(response.Response.characters.data[character.characterId]))
+                .setHeaders([header])
+                .setRows(rows)
+                .setFooters([footer1, footer2])
+                .render();
         }
 
         function fillHighestPowerItem(itemsByBucket, bucketHash, profile, characterId) {
@@ -298,8 +274,8 @@
                 if (itemInstance.primaryStat === undefined) {
                     return;
                 }
-                if (itemsByBucket[bucketHash] == null || 
-                   itemsByBucket[bucketHash].itemInstance.primaryStat.value < itemInstance.primaryStat.value) {
+                if (itemsByBucket[bucketHash] == null ||
+                    itemsByBucket[bucketHash].itemInstance.primaryStat.value < itemInstance.primaryStat.value) {
                     itemsByBucket[bucketHash] = {
                         item: item,
                         itemInstance: itemInstance,
@@ -308,10 +284,6 @@
             };
             $.each(profile.characterInventories.data[characterId].items, fn);
             $.each(profile.characterEquipment.data[characterId].items, fn);
-        }
-
-        function getCharacterDescription(character) {
-            return HASH_TO_NAME[character.classHash] + " (" + HASH_TO_NAME[character.raceHash] + " " + HASH_TO_NAME[character.genderHash] + ")";
         }
 
         function clamp(value, min, max) {
