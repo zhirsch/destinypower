@@ -134,7 +134,10 @@
 
         function showPlatforms(response) {
             showRaw(response);
-            $.each(response.Response.destinyMemberships, function (i, platform) {
+            const activeDestinyMemberships = response.Response.destinyMemberships.filter(function ({ applicableMembershipTypes }) {
+                return applicableMembershipTypes.length !== 0;
+            });
+            $.each(activeDestinyMemberships, function (i, platform) {
                 $("#platforms").append($("<option />").text(platform.displayName).data("platform", platform));
             });
             $("#platforms").change(function () {
@@ -142,7 +145,7 @@
                     .then(showProfile)
                     .catch(showError);
             });
-            return response.Response.destinyMemberships[0];
+            return activeDestinyMemberships[0];
         }
 
         function fetchProfile(platform) {
@@ -298,8 +301,8 @@
                 if (itemInstance.primaryStat === undefined) {
                     return;
                 }
-                if (itemsByBucket[bucketHash] == null || 
-                   itemsByBucket[bucketHash].itemInstance.primaryStat.value < itemInstance.primaryStat.value) {
+                if (itemsByBucket[bucketHash] == null ||
+                    itemsByBucket[bucketHash].itemInstance.primaryStat.value < itemInstance.primaryStat.value) {
                     itemsByBucket[bucketHash] = {
                         item: item,
                         itemInstance: itemInstance,
@@ -452,6 +455,7 @@
             height: 30px;
             padding-left: 0.3em;
         }
+
     </style>
 </head>
 
